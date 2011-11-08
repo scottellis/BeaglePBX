@@ -1,0 +1,30 @@
+--- a/board/ti/beagle/beagle.c	2011-03-31 14:45:36.000000000 -0700
++++ b/board/ti/beagle/beagle.c	2011-10-15 19:03:03.000000000 -0700
+@@ -183,6 +183,17 @@
+ 					TWL4030_PM_RECEIVER_VAUX2_DEV_GRP,
+ 					TWL4030_PM_RECEIVER_DEV_GRP_P1);
+ 		break;
++	case REVISION_XM_C:
++		printf("Beagle xM Rev C\n");
++		setenv("beaglerev", "xMC");
++		setenv("mpurate", "1000");
++		MUX_BEAGLE_XM();
++		/* Set VAUX2 to 1.8V for EHCI PHY */
++		twl4030_pmrecv_vsel_cfg(TWL4030_PM_RECEIVER_VAUX2_DEDICATED,
++					TWL4030_PM_RECEIVER_VAUX2_VSEL_18,
++					TWL4030_PM_RECEIVER_VAUX2_DEV_GRP,
++					TWL4030_PM_RECEIVER_DEV_GRP_P1);
++		break;
+ 	default:
+ 		printf("Beagle unknown 0x%02x\n", get_board_revision());
+ 	}
+--- a/board/ti/beagle/beagle.h	2011-03-31 14:45:36.000000000 -0700
++++ b/board/ti/beagle/beagle.h	2011-10-15 19:09:30.000000000 -0700
+@@ -38,6 +38,7 @@
+ #define REVISION_CX	0x6
+ #define REVISION_C4	0x5
+ #define REVISION_XM	0x0
++#define REVISION_XM_C	0x2
+ 
+ /*
+  * IEN  - Input Enable

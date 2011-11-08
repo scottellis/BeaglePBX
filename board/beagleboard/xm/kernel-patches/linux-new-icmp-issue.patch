@@ -1,0 +1,11 @@
+--- a/include/linux/icmp.h	2011-06-02 17:34:20.000000000 -0700
++++ b/include/linux/icmp.h	2011-10-28 04:34:47.000000000 -0700
+@@ -80,7 +80,7 @@
+ 		__be16	mtu;
+ 	} frag;
+   } un;
+-};
++} __packed;
+ 
+ #ifdef __KERNEL__
+ #include <linux/skbuff.h>

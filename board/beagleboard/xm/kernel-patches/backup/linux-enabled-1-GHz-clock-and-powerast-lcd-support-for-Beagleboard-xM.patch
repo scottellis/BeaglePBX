@@ -1,0 +1,530 @@
+--- a/arch/arm/mach-omap2/board-omap3beagle.c	2011-10-21 17:27:13.000000000 -0700
++++ b/arch/arm/mach-omap2/board-omap3beagle.c	2011-10-20 21:32:41.000000000 -0700
+@@ -63,6 +63,8 @@
+  *	C1_3	= GPIO173, GPIO172, GPIO171: 1 1 0
+  *	C4	= GPIO173, GPIO172, GPIO171: 1 0 1
+  *	XM	= GPIO173, GPIO172, GPIO171: 0 0 0
++ *     XMA/XMB  = GPIO173, GPIO172, GPIO171: 0 0 0
++ *     XMC 	= GPIO173, GPIO172, GPIO171: 0 1 0
+  */
+ enum {
+ 	OMAP3BEAGLE_BOARD_UNKN = 0,
+@@ -70,6 +72,7 @@
+ 	OMAP3BEAGLE_BOARD_C1_3,
+ 	OMAP3BEAGLE_BOARD_C4,
+ 	OMAP3BEAGLE_BOARD_XM,
++	OMAP3BEAGLE_BOARD_XMC,
+ };
+ 
+ static u8 omap3_beagle_version;
+@@ -121,9 +124,17 @@
+ 		omap3_beagle_version = OMAP3BEAGLE_BOARD_C4;
+ 		break;
+ 	case 0:
+-		printk(KERN_INFO "OMAP3 Beagle Rev: xM\n");
++		printk(KERN_INFO "OMAP3 Beagle Rev: xM A\n");
+ 		omap3_beagle_version = OMAP3BEAGLE_BOARD_XM;
+ 		break;
++	case 1:
++   		printk(KERN_INFO "OMAP3 Beagle Rev: xM B\n");
++		omap3_beagle_version = OMAP3BEAGLE_BOARD_XM;
++		break;
++	case 2:
++   		printk(KERN_INFO "OMAP3 Beagle Rev: xM C\n");
++		omap3_beagle_version = OMAP3BEAGLE_BOARD_XMC;
++		break;
+ 	default:
+ 		printk(KERN_INFO "OMAP3 Beagle Rev: unknown %hd\n", beagle_rev);
+ 		omap3_beagle_version = OMAP3BEAGLE_BOARD_UNKN;
+@@ -452,7 +463,7 @@
+ 	.vdac		= &beagle_vdac,
+ 	.vpll2		= &beagle_vpll2,
+ };
+-
++#define BB_KEYPAD_IRQ_GPIO          (132)
+ static struct i2c_board_info __initdata beagle_i2c_boardinfo[] = {
+ 	{
+ 		I2C_BOARD_INFO("twl4030", 0x48),
+@@ -462,6 +473,20 @@
+ 	},
+ };
+ 
++static struct i2c_board_info __initdata pa_i2c_lcd[] = {
++#if defined(CONFIG_PA_TWI_LCD) || defined(CONFIG_PA_TWI_LCD_MODULE)
++	{
++		I2C_BOARD_INFO("pcf8574_lcd", 0x20),
++	},
++#endif
++#if defined(CONFIG_INPUT_PCF8574) || defined(CONFIG_INPUT_PCF8574_MODULE)
++	{
++		I2C_BOARD_INFO("pcf8574_keypad", 0x27),
++		.irq = OMAP_GPIO_IRQ(BB_KEYPAD_IRQ_GPIO),
++	},
++#endif
++};
++
+ static struct i2c_board_info __initdata beagle_i2c_eeprom[] = {
+        {
+                I2C_BOARD_INFO("eeprom", 0x50),
+@@ -472,6 +497,8 @@
+ {
+ 	omap_register_i2c_bus(1, 2600, beagle_i2c_boardinfo,
+ 			ARRAY_SIZE(beagle_i2c_boardinfo));
++	omap_register_i2c_bus(2, 400, pa_i2c_lcd,
++			ARRAY_SIZE(pa_i2c_lcd));
+ 	/* Bus 3 is attached to the DVI port where devices like the pico DLP
+ 	 * projector don't work reliably with 400kHz */
+ 	omap_register_i2c_bus(3, 100, beagle_i2c_eeprom, ARRAY_SIZE(beagle_i2c_eeprom));
+@@ -512,7 +539,7 @@
+ static struct gpio_keys_button gpio_buttons[] = {
+ 	{
+ 		.code			= BTN_EXTRA,
+-		.gpio			= 7,
++		.gpio			= 4,
+ 		.desc			= "user",
+ 		.wakeup			= 1,
+ 	},
+@@ -629,14 +656,23 @@
+ 				__func__, mh, dh);
+ 			return;
+ 		}
++
++#ifdef CONFIG_OMAP_SMARTREFLEX
++		unsigned long mpu_freq = 1000000000;
++		unsigned long dsp_freq = 800000000;
++#else
++		unsigned long mpu_freq = 800000000;
++		unsigned long dsp_freq = 660000000;
++#endif
++
+ 		/* Enable MPU 1GHz and lower opps */
+ 		dev = &mh->od->pdev.dev;
+-		r = opp_enable(dev, 800000000);
++		r = opp_enable(dev, mpu_freq);
+ 		/* TODO: MPU 1GHz needs SR and ABB */
+ 
+ 		/* Enable IVA 800MHz and lower opps */
+ 		dev = &dh->od->pdev.dev;
+-		r |= opp_enable(dev, 660000000);
++		r |= opp_enable(dev, dsp_freq);
+ 		/* TODO: DSP 800MHz needs SR and ABB */
+ 		if (r) {
+ 			pr_err("%s: failed to enable higher opp %d\n",
+@@ -646,9 +682,9 @@
+ 			 * about the results
+ 			 */
+ 			dev = &mh->od->pdev.dev;
+-			opp_disable(dev, 800000000);
++			opp_disable(dev, mpu_freq);
+ 			dev = &dh->od->pdev.dev;
+-			opp_disable(dev, 660000000);
++			opp_disable(dev, dsp_freq);
+ 		}
+ 	}
+ 	return;
+--- a/arch/arm/plat-omap/clock.c	2011-06-02 17:34:20.000000000 -0700
++++ b/arch/arm/plat-omap/clock.c	2011-10-13 21:19:51.000000000 -0700
+@@ -185,7 +185,7 @@
+ 	if (!mpurate)
+ 		return 1;
+ 
+-	if (mpurate < 1000)
++	if (mpurate <= 1000)
+ 		mpurate *= 1000000;
+ 
+ 	return 1;
+diff -uNr a/drivers/char/bfin_twi_lcd.c b/drivers/char/bfin_twi_lcd.c
+--- a/drivers/char/bfin_twi_lcd.c	1969-12-31 16:00:00.000000000 -0800
++++ b/drivers/char/bfin_twi_lcd.c	2011-10-19 18:54:39.000000000 -0700
+@@ -0,0 +1,377 @@
++/*
++ * TWI LCD driver (HD44780) connected to a PCF8574 I2C IO expander
++ *
++ * Copyright 2006-2009 Analog Devices Inc.
++ */
++
++#define pr_fmt(x) "bfin_twi_lcd: " x
++
++#include <linux/delay.h>
++#include <linux/types.h>
++#include <linux/errno.h>
++#include <linux/miscdevice.h>
++#include <linux/slab.h>
++#include <linux/i2c.h>
++#include <linux/io.h>
++#include <linux/ioport.h>
++#include <linux/fcntl.h>
++#include <linux/fs.h>
++#include <linux/sched.h>
++#include <linux/ioctl.h>
++
++/* HD44780 execution timings [microseconds]
++ * as these values differ from spec to spec,
++ * we use the worst-case values.
++ */
++
++#define T_INIT1    5		/* (ms) first init sequence:  4.1 msec */
++#define T_INIT2  150		/* second init sequence: 100 usec */
++#define T_EXEC    80		/* normal execution time */
++#define T_WRCG   120		/* CG RAM Write */
++#define T_CLEAR    3		/* (ms) Clear Display */
++
++#define SIGNAL_RW		0x20
++#define SIGNAL_RS		0x10
++#define SIGNAL_ENABLE 	0x40
++#define SIGNAL_ENABLE2	0x80
++
++/* LCD Driver function headers and globals */
++
++#define	PCF8574_LCD_DRV_NAME		"pcf8574_lcd"
++static struct i2c_client *pcf8574_lcd_client;
++
++static int currController = 0x2;
++static unsigned int lcd_present = 0;
++
++#define kLCD_Addr       0x80
++
++
++#define BusyCheck()	do { } while (0)
++
++/*
++ * Function command codes for io_ctl.
++ */
++#define LCD_On			1
++#define LCD_Off			2
++#define LCD_Clear		3
++#define LCD_Reset		4
++#define LCD_Cursor_Left		5
++#define LCD_Cursor_Right	6
++#define LCD_Disp_Left		7
++#define LCD_Disp_Right		8
++#define LCD_Set_Cursor		10
++#define LCD_Home		11
++#define LCD_Curr_Controller	12
++#define LCD_Cursor_Off		14
++#define LCD_Cursor_On		15
++#define LCD_Set_Cursor_Pos	17
++#define LCD_Blink_Off           18
++#define LCD_Contr           19
++
++#define CONTROLLER_1	0x1
++#define CONTROLLER_2	0x2
++#define CONTROLLER_BOTH	0x3
++
++static void drv_HD_I2C_nibble(unsigned char controller, unsigned char nibble)
++{
++	unsigned char enable;
++	unsigned char command;	/* this is actually the first data byte on the PCF8574 */
++	unsigned char data_block[2];
++	/* enable signal: 'controller' is a bitmask */
++	/* bit n .. send to controller #n */
++	/* so we can send a byte to more controllers at the same time! */
++	enable = 0;
++	if (controller & 0x01)
++		enable |= SIGNAL_ENABLE;
++	if (controller & 0x02)
++		enable |= SIGNAL_ENABLE2;
++
++	command = nibble;
++	data_block[0] = nibble | enable;
++	data_block[1] = nibble;
++
++	i2c_smbus_write_block_data(pcf8574_lcd_client, command, 2, data_block);
++}
++
++static void drv_HD_I2C_byte(const unsigned char controller,
++			    const unsigned char data)
++{
++	/* send data with RS enabled */
++	drv_HD_I2C_nibble(controller, ((data >> 4) & 0x0f) | SIGNAL_RS);
++	drv_HD_I2C_nibble(controller, (data & 0x0f) | SIGNAL_RS);
++	udelay(T_INIT2);
++}
++
++static void drv_HD_I2C_command(const unsigned char controller,
++			       const unsigned char cmd)
++{
++	/* send data with RS disabled */
++	drv_HD_I2C_nibble(controller, ((cmd >> 4) & 0x0f));
++	drv_HD_I2C_nibble(controller, ((cmd) & 0x0f));
++	udelay(T_INIT2);
++}
++
++static void drv_HD_I2C_data(const unsigned char controller, const char *string,
++			    const int len)
++{
++	int l = len;
++
++	/* sanity check */
++	if (len <= 0)
++		return;
++
++	while (l--) {
++		if (*string)
++			drv_HD_I2C_byte(controller, *(string++));
++	}
++}
++
++static int drv_HD_I2C_load(void)
++{
++	/* initialize display */
++	drv_HD_I2C_nibble(CONTROLLER_BOTH, 0x03);
++	msleep(T_INIT1);	/* 4 Bit mode, wait 4.1 ms */
++	drv_HD_I2C_nibble(CONTROLLER_BOTH, 0x03);
++	udelay(T_INIT2);	/* 4 Bit mode, wait 100 us */
++	drv_HD_I2C_nibble(CONTROLLER_BOTH, 0x03);
++	udelay(T_INIT2);	/* 4 Bit mode, wait 4.1 ms */
++	drv_HD_I2C_nibble(CONTROLLER_BOTH, 0x02);
++	udelay(T_INIT2);	/* 4 Bit mode, wait 100 us */
++	drv_HD_I2C_command(CONTROLLER_BOTH, 0x28);	/* 4 Bit mode, 1/16 duty cycle, 5x8 font */
++
++	/* Set defaults:
++	   Low 0xC0 Display On
++	   Low 0x06 Cursor increment, no shift
++	   Low 0x80 Display Address 0
++	   Low 0x02 Cursor Home */
++
++	udelay(T_INIT2);
++	drv_HD_I2C_command(CONTROLLER_BOTH, 0x0f);
++	udelay(T_INIT2);
++	drv_HD_I2C_command(CONTROLLER_BOTH, 0x06);
++	udelay(T_INIT2);
++	drv_HD_I2C_command(CONTROLLER_BOTH, 0x80);
++	udelay(T_INIT2);
++	drv_HD_I2C_command(CONTROLLER_BOTH, 0x02);
++	udelay(T_INIT2);
++	drv_HD_I2C_command(CONTROLLER_BOTH, 0x0C);
++	udelay(T_INIT2);
++	drv_HD_I2C_command(CONTROLLER_BOTH, 0x01);
++	udelay(T_INIT2);
++
++	return 0;
++}
++
++static int __devinit pcf8574_lcd_probe(struct i2c_client *client, const struct i2c_device_id *id)
++{
++	pcf8574_lcd_client = client;
++	drv_HD_I2C_load();
++	lcd_present = 1;
++
++	return 0;
++}
++
++static int __devexit pcf8574_lcd_remove(struct i2c_client *client)
++{
++	return 0;
++}
++
++static const struct i2c_device_id pcf8574_lcd_id[] = {
++	{ PCF8574_LCD_DRV_NAME, 0 },
++	{ }
++};
++MODULE_DEVICE_TABLE(i2c, pcf8574_lcd_id);
++
++static struct i2c_driver pcf8574_lcd_driver = {
++	.driver = {
++		.name = PCF8574_LCD_DRV_NAME,
++	},
++	.probe = pcf8574_lcd_probe,
++	.remove = __devexit_p(pcf8574_lcd_remove),
++	.id_table = pcf8574_lcd_id,
++};
++
++static int lcd_ioctl(struct inode *inode, struct file *file,
++		     unsigned int cmd, unsigned long arg)
++{
++
++	switch (cmd) {
++
++	case LCD_Contr:
++		break;
++
++	case LCD_On:
++		udelay(T_EXEC);
++		BusyCheck();
++		drv_HD_I2C_command(currController, 0x0F);
++		break;
++
++	case LCD_Off:
++		udelay(T_EXEC);
++		BusyCheck();
++		drv_HD_I2C_command(currController, 0x08);
++		break;
++
++	case LCD_Reset:
++		udelay(T_EXEC);
++		drv_HD_I2C_command(currController, 0x3F);
++		udelay(T_EXEC);
++		drv_HD_I2C_command(currController, 0x3F);
++		udelay(T_EXEC);
++		drv_HD_I2C_command(currController, 0x3F);
++		udelay(T_EXEC);
++		drv_HD_I2C_command(currController, 0x3F);
++		udelay(T_EXEC);
++		drv_HD_I2C_command(currController, 0x01);
++		udelay(T_EXEC);
++		drv_HD_I2C_command(currController, 0x06);
++		break;
++
++	case LCD_Clear:
++		udelay(T_EXEC);
++		BusyCheck();
++		drv_HD_I2C_command(currController, 0x01);
++		msleep(T_CLEAR);
++		break;
++
++	case LCD_Cursor_Left:
++		udelay(T_EXEC);
++		BusyCheck();
++		drv_HD_I2C_command(currController, 0x10);
++		break;
++
++	case LCD_Cursor_Right:
++		udelay(T_EXEC);
++		BusyCheck();
++		drv_HD_I2C_command(currController, 0x14);
++		break;
++
++	case LCD_Cursor_Off:
++		udelay(T_EXEC);
++		BusyCheck();
++		drv_HD_I2C_command(currController, 0x0C);
++		break;
++
++	case LCD_Cursor_On:
++		udelay(T_EXEC);
++		BusyCheck();
++		drv_HD_I2C_command(currController, 0x0F);
++		break;
++
++	case LCD_Blink_Off:
++		udelay(T_EXEC);
++		BusyCheck();
++		drv_HD_I2C_command(currController, 0x0E);
++		break;
++
++	case LCD_Curr_Controller:
++		currController = arg;
++		break;
++
++	case LCD_Set_Cursor_Pos:
++		{
++			udelay(T_EXEC);
++			BusyCheck();
++			drv_HD_I2C_command(currController, arg | kLCD_Addr);
++			break;
++		}
++
++	case LCD_Set_Cursor:
++		{
++			udelay(T_EXEC);
++			BusyCheck();
++			drv_HD_I2C_byte(currController, arg);
++			udelay(T_EXEC);
++			BusyCheck();
++			drv_HD_I2C_command(currController, 0x10);
++
++			break;
++		}
++
++	case LCD_Disp_Left:
++		udelay(T_EXEC);
++		BusyCheck();
++		drv_HD_I2C_command(currController, 0x18);
++		break;
++
++	case LCD_Disp_Right:
++		udelay(T_EXEC);
++		BusyCheck();
++		drv_HD_I2C_command(currController, 0x1C);
++		break;
++
++	case LCD_Home:
++		udelay(T_EXEC);
++		BusyCheck();
++		drv_HD_I2C_command(currController, 0x02);
++		break;
++
++	default:
++		return -EINVAL;
++
++	}
++
++	return 0;
++
++}
++
++static int lcd_open(struct inode *inode, struct file *file)
++{
++	if (!lcd_present)
++		return -ENXIO;
++	else
++		return 0;
++}
++
++static ssize_t lcd_write(struct file *filp, const char *buf, size_t count,
++			 loff_t * f_pos)
++{
++	drv_HD_I2C_data(currController, buf, count);
++
++	return count;
++}
++
++/*
++ *	The various file operations we support.
++ */
++
++static const struct file_operations lcd_fops = {
++	.owner = THIS_MODULE,
++	.write = lcd_write,
++	.unlocked_ioctl = lcd_ioctl,
++	.open  = lcd_open,
++	//.llseek = default_llseek,
++};
++
++static struct miscdevice bfin_twi_lcd_dev = {
++	.minor = MISC_DYNAMIC_MINOR,
++	.name  = "lcd",
++	.fops  = &lcd_fops
++};
++
++static int __init lcd_init(void)
++{
++	int result;
++	pr_info("loaded\n");
++
++	result = misc_register(&bfin_twi_lcd_dev);
++	if (result < 0) {
++		pr_err("unable to register misc device\n");
++		return result;
++	}
++
++	return i2c_add_driver(&pcf8574_lcd_driver);
++}
++module_init(lcd_init);
++
++static void __exit lcd_exit(void)
++{
++	i2c_del_driver(&pcf8574_lcd_driver);
++	misc_deregister(&bfin_twi_lcd_dev);
++	pr_info("goodbye\n");
++}
++module_exit(lcd_exit);
++
++MODULE_AUTHOR("Michael Hennerich <hennerich@blackfin.uclinux.org>");
++MODULE_DESCRIPTION("TWI LCD driver (HD44780)");
++MODULE_LICENSE("GPL");
+--- a/drivers/char/Kconfig	2011-06-02 17:34:20.000000000 -0700
++++ b/drivers/char/Kconfig	2011-10-19 19:33:49.000000000 -0700
+@@ -561,6 +561,11 @@
+ 	  out to lunch past a certain margin.  It can reboot the system
+ 	  or merely print a warning.
+ 
++config PA_TWI_LCD
++	tristate "TWI/I2C LCD support for HD44780 based LCD modules"
++	depends on I2C
++	default n
++
+ config MMTIMER
+ 	tristate "MMTIMER Memory mapped RTC for SGI Altix"
+ 	depends on IA64_GENERIC || IA64_SGI_SN2

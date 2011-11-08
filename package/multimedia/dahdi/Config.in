@@ -1,0 +1,8 @@
+config BR2_PACKAGE_DAHDI
+	bool "dahdi"
+	depends on BR2_PACKAGE_OPENSSL
+	help
+		dahdi - the dahdi support
+
+comment "asterisk - (required openssl and mpg123)"
+	depends on !BR2_PACKAGE_OPENSSL
