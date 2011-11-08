@@ -4,20 +4,14 @@
 #
 #############################################################
 X_LOADER_RAW_VERSION = $(call qstrip,$(BR2_TARGET_XLOADER_VERSION))
-X_LOADER_SITE = git://arago-project.org/git/projects/x-load-omap3.git
+X_LOADER_SITE = git://gitorious.org/x-loader/x-loader.git
 X_LOADER_LIBTOOL_PATCH = NO
 X_LOADER_INSTALL_STAGING = NO
 
 X_LOADER_BOARD_NAME = $(call qstrip,$(BR2_TARGET_XLOADER_BOARDNAME))
 
 ifeq ($(X_LOADER_RAW_VERSION),1.51)
-X_LOADER_VERSION=v1.51_OMAPPSP_04.02.00.07
-endif
-ifeq ($(X_LOADER_RAW_VERSION),1.48)
-X_LOADER_VERSION=v1.48_OMAPPSP_04.02.00.01
-endif
-ifeq ($(X_LOADER_RAW_VERSION),1.46)
-X_LOADER_VERSION=v1.46_OMAPPSP_03.00.01.06
+X_LOADER_VERSION=v1.5.1
 endif
 
 define X_LOADER_CONFIGURE_CMDS
@@ -38,7 +32,6 @@ define X_LOADER_BUILD_CMDS
 		EXTRAVERSION="$(BR2_TARGET_XLOADER_EXTRAVERSION)" \
 		$(MAKE) CROSS_COMPILE="$(CCACHE) $(TARGET_CROSS)" \
 		$(X_LOADER_MAKE_OPT) -C $(X_LOADER_DIR)
-	$(CC) $(X_LOADER_DIR)/$(X_LOADER_SIGNGP).c -o $(X_LOADER_DIR)/$(X_LOADER_SIGNGP)
 	(cd $(X_LOADER_DIR); ./$(X_LOADER_SIGNGP))
 	/bin/mv $(X_LOADER_DIR)/x-load.bin.ift $(X_LOADER_DIR)/$(X_LOADER_MLO)
 endef

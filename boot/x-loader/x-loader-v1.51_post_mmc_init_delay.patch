@@ -1,0 +1,12 @@
+--- a/lib/board.c-orig	2011-11-08 09:16:31.904284649 -0500
++++ b/lib/board.c	2011-11-08 09:17:26.854285844 -0500
+@@ -98,6 +98,9 @@
+ #ifdef CONFIG_MMC
+ 	/* first try mmc */
+ 	if (mmc_init(1)) {
++		/* XM-Rev A board hangs without this delay */
++		udelay(100);
++
+ 		size = file_fat_read("u-boot.bin", buf, 0);
+ 		if (size > 0) {
+ #ifdef CFG_PRINTF
